@@ -1,0 +1,45 @@
+---
+- name: Install Nexus Repository Manager 3
+  hosts: nexus-instance
+  become: yes
+  vars:
+    nexus_version: "3.66.0-02"
+    nexus_download_url: "https://download.sonatype.com/nexus/3/nexus-{{ nexus_version }}-unix.tar.gz"
+    nexus_install_dir: "/home/ec2-user/nexus"
+
+  tasks:
+    - name: Install necessary packages
+      yum:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - tar
+        - java-1.8.0-amazon-corretto-devel
+
+    - name: Create Nexus installation directory
+      file:
+        path: "{{ nexus_install_dir }}"
+        state: directory
+
+    - name: Download Nexus
+      get_url:
+        url: "{{ nexus_download_url }}"
+        dest: "/tmp/nexus-{{ nexus_version }}-unix.tar.gz"
+
+    - name: Extract Nexus
+      unarchive:
+        src: "/tmp/nexus-{{ nexus_version }}-unix.tar.gz"
+        dest: "{{ nexus_install_dir }}"
+        remote_src: yes
+
+    - name: Start Nexus
+      shell: "/home/ec2-user/nexus/nexus-3.66.0-02/bin/nexus start"
+      async: 60
+      poll: 0
+      ignore_errors: true
+     
+    - name: Fetch admin password
+      fetch:
+        src: "{{ nexus_install_dir }}/sonatype-work/nexus3/admin.password"
+        dest: "/opt/nexus/password.txt" 
+        flat: yes

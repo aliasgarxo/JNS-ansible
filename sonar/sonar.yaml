@@ -1,0 +1,95 @@
+- name: Install and configure SonarQube on Amazon Linux 2023
+  hosts: sonar-instance 
+  become: true  
+
+  vars:
+    sonarqube_version: "9.9.2.77730" 
+    sonarqube_download_url: "https://binaries.sonarsource.com/Distribution/sonarqube/sonarqube-{{ sonarqube_version }}.zip"
+    sonarqube_install_dir: "/opt/sonar"
+
+  tasks:
+    - name: Install Java (Amazon Corretto 17)
+      package:
+        name: java-17-amazon-corretto-devel
+        state: present
+
+    - name: Download SonarQube
+      get_url:
+        url: "{{ sonarqube_download_url }}"
+        dest: /opt/sonarqube.zip  
+
+    # User Creation
+    - name: Create SonarQube user
+      user:
+        name: sonar
+        state: present
+
+    # Unzip SonarQube
+    - name: Install unzip 
+      package: 
+        name: unzip
+        state: present
+
+    - name: Unzip SonarQube archive
+      unarchive:
+        src: /opt/sonarqube.zip
+        dest: /opt 
+        remote_src: yes
+
+    - name: Fix ownership of extracted files (if extracted as root)
+      file:
+        path: /opt/sonarqube-{{ sonarqube_version }}
+        owner: sonar
+        group: sonar
+        state: directory
+        recurse: yes
+
+    # Rename and Set Ownership
+    - name: Rename extracted directory
+      file:
+        src: /opt/sonarqube-{{ sonarqube_version }}
+        dest: "{{ sonarqube_install_dir }}"
+        state: link
+      become: true
+
+    - name: Change ownership of SonarQube directory
+      file:
+        path: "{{ sonarqube_install_dir }}"
+        owner: sonar
+        group: sonar
+        state: directory
+        recurse: yes
+
+    # Sudoers Configuration
+    - name: Update sudoers for SonarQube user
+      lineinfile:
+        path: /etc/sudoers
+        line: "sonar ALL=(ALL:ALL) NOPASSWD:ALL"
+        validate: 'visudo -cf %s'
+
+    # Systemd Service
+    - name: Create SonarQube systemd service
+      copy:
+        content: |
+          [Unit]
+          Description=SonarQube service
+          After=network.target
+
+          [Service]
+          Type=forking
+          User=sonar
+          ExecStart=/opt/sonar/bin/linux-x86-64/sonar.sh start
+          ExecStop=/opt/sonar/bin/linux-x86-64/sonar.sh stop
+          Restart=always
+          LimitNOFILE=65536
+
+          [Install]
+          WantedBy=multi-user.target
+        dest: /etc/systemd/system/sonar.service
+
+    # Start and Enable Service
+    - name: Start SonarQube service
+      service:
+        name: sonar
+        state: started
+        enabled: true 
